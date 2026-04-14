@@ -3,87 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daonna - Human-like Typing Simulator</title>
+    <title>Daonna</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="app-container">
-        <header class="app-header">
-            <h1 class="app-title">Daonna</h1>
-            <p class="app-subtitle">Human-like Typing Simulator</p>
+    <div class="app">
+        <header class="topbar">
+            <div class="brand">
+                <span class="brand-dot"></span>
+                <span class="brand-name">Daonna</span>
+            </div>
+            <span id="statusPill" class="pill muted">idle</span>
         </header>
-        
-        <main class="app-content">
-            <div class="card instructions-card">
-                <div class="card-content">
-                    <p>Paste text below, then click 'Start Typing'. You'll have 5 seconds to focus on your target application.</p>
-                </div>
+
+        <section class="block">
+            <div class="block-head">
+                <span class="label">Text</span>
+                <span id="charCount" class="muted tiny">0</span>
             </div>
-            
-            <div class="card input-card">
-                <div class="card-content">
-                    <textarea id="textInput" class="text-input" placeholder="Paste your text here..."></textarea>
-                </div>
+            <textarea id="textInput" class="editor" placeholder="Paste or type text..." spellcheck="false"></textarea>
+        </section>
+
+        <section class="block">
+            <div class="block-head"><span class="label">Profile</span></div>
+            <div class="presets">
+                {% for name in presets.keys() %}
+                    <button type="button" class="preset" data-preset="{{ name }}">{{ name }}</button>
+                {% endfor %}
+                <button type="button" class="preset active" data-preset="">custom</button>
             </div>
-            
-            <div class="card settings-card">
-                <div class="card-header">
-                    <h2>Settings</h2>
-                </div>
-                <div class="card-content">
-                    <div class="slider-container">
-                        <label for="wpmSlider" class="slider-label">
-                            Typing Speed (WPM): <span id="wpmValue">50</span>
-                        </label>
-                        <div class="slider-with-value">
-                            <input type="range" id="wpmSlider" min="20" max="100" value="50" class="slider">
-                        </div>
-                    </div>
-                    
-                    <div class="slider-container">
-                        <label for="randomnessSlider" class="slider-label">
-                            Randomness: <span id="randomnessValue">0.5</span>
-                        </label>
-                        <div class="slider-with-value">
-                            <input type="range" id="randomnessSlider" min="0.1" max="1.0" step="0.1" value="0.5" class="slider">
-                        </div>
-                    </div>
-                    
-                    <div class="slider-container">
-                        <label for="typoSlider" class="slider-label">
-                            Typo Probability: <span id="typoValue">0.02</span>
-                        </label>
-                        <div class="slider-with-value">
-                            <input type="range" id="typoSlider" min="0" max="0.1" step="0.01" value="0.02" class="slider">
-                        </div>
-                    </div>
-                </div>
+        </section>
+
+        <section class="block controls">
+            <div class="row">
+                <span class="row-label">Speed</span>
+                <input type="range" id="wpmSlider" min="20" max="200" value="80">
+                <span id="wpmValue" class="row-val">80</span>
+                <span class="row-unit">wpm</span>
             </div>
-            
-            <div class="button-container">
-                <button id="startButton" class="btn primary-btn">
-                    <i class="material-icons">keyboard</i> Start Typing
-                </button>
-                <button id="clearButton" class="btn secondary-btn">
-                    <i class="material-icons">clear</i> Clear
-                </button>
+            <div class="row">
+                <span class="row-label">Random</span>
+                <input type="range" id="randomnessSlider" min="0.1" max="1.0" step="0.05" value="0.5">
+                <span id="randomnessValue" class="row-val">0.50</span>
             </div>
-            
-            <div id="statusContainer" class="status-container">
-                <div id="statusMessage" class="status-message"></div>
-                <div id="progressBar" class="progress-bar-container">
-                    <div class="progress-bar"></div>
-                </div>
+            <div class="row">
+                <span class="row-label">Typos</span>
+                <input type="range" id="typoSlider" min="0" max="0.1" step="0.005" value="0.02">
+                <span id="typoValue" class="row-val">0.020</span>
             </div>
-        </main>
-        
-        <footer class="app-footer">
-            <p>Daonna - Humanized Text Input Simulator</p>
-        </footer>
+            <div class="row">
+                <span class="row-label">Momentum</span>
+                <input type="range" id="momentumSlider" min="0" max="0.85" step="0.05" value="0.45">
+                <span id="momentumValue" class="row-val">0.45</span>
+            </div>
+            <div class="row">
+                <span class="row-label">Countdown</span>
+                <input type="range" id="countdownSlider" min="1" max="10" step="1" value="5">
+                <span id="countdownValue" class="row-val">5</span>
+                <span class="row-unit">s</span>
+            </div>
+        </section>
+
+        <section class="actions">
+            <button id="startButton" class="btn primary">
+                <i class="material-icons">play_arrow</i><span>Start</span>
+            </button>
+            <button id="stopButton" class="btn danger" disabled>
+                <i class="material-icons">stop</i><span>Stop</span>
+            </button>
+        </section>
+
+        <section class="status-bar">
+            <div class="status-line">
+                <span id="statusMessage" class="status-msg">Ready</span>
+                <span id="statusStats" class="muted tiny"></span>
+            </div>
+            <div class="progress"><div id="progressFill" class="progress-fill"></div></div>
+        </section>
+
+        <div id="countdownOverlay" class="overlay hidden">
+            <div class="overlay-inner">
+                <div id="countdownNum" class="countdown-num">5</div>
+                <div class="countdown-sub">Focus your target window</div>
+                <button id="cancelCountdown" class="btn ghost small">Cancel</button>
+            </div>
+        </div>
     </div>
-    
+
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

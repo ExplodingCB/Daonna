@@ -1,153 +1,224 @@
-document.addEventListener('DOMContentLoaded', function() {
-    // Get DOM elements
-    const textInput = document.getElementById('textInput');
-    const wpmSlider = document.getElementById('wpmSlider');
-    const randomnessSlider = document.getElementById('randomnessSlider');
-    const typoSlider = document.getElementById('typoSlider');
-    const startButton = document.getElementById('startButton');
-    const clearButton = document.getElementById('clearButton');
-    const statusMessage = document.getElementById('statusMessage');
-    const progressBar = document.getElementById('progressBar');
-    const wpmValue = document.getElementById('wpmValue');
-    const randomnessValue = document.getElementById('randomnessValue');
-    const typoValue = document.getElementById('typoValue');
-    
-    // Update slider display values
-    wpmSlider.addEventListener('input', () => {
-        wpmValue.textContent = wpmSlider.value;
+(() => {
+    const $ = (id) => document.getElementById(id);
+
+    const textInput = $('textInput');
+    const charCount = $('charCount');
+
+    const sliders = {
+        wpm: { el: $('wpmSlider'), out: $('wpmValue'), fmt: (v) => v },
+        randomness: { el: $('randomnessSlider'), out: $('randomnessValue'), fmt: (v) => (+v).toFixed(2) },
+        typo: { el: $('typoSlider'), out: $('typoValue'), fmt: (v) => (+v).toFixed(3) },
+        momentum: { el: $('momentumSlider'), out: $('momentumValue'), fmt: (v) => (+v).toFixed(2) },
+        countdown: { el: $('countdownSlider'), out: $('countdownValue'), fmt: (v) => v },
+    };
+
+    const startBtn = $('startButton');
+    const stopBtn = $('stopButton');
+    const statusMsg = $('statusMessage');
+    const statusStats = $('statusStats');
+    const statusPill = $('statusPill');
+    const progressFill = $('progressFill');
+
+    const overlay = $('countdownOverlay');
+    const countdownNum = $('countdownNum');
+    const cancelCountdown = $('cancelCountdown');
+
+    const presetButtons = document.querySelectorAll('.preset');
+
+    let pollTimer = null;
+    let activePresetName = '';
+
+    // --- slider display binding ---
+    Object.values(sliders).forEach((s) => {
+        const update = () => (s.out.textContent = s.fmt(s.el.value));
+        s.el.addEventListener('input', () => {
+            update();
+            markCustomPreset();
+        });
+        update();
     });
-    
-    randomnessSlider.addEventListener('input', () => {
-        randomnessValue.textContent = randomnessSlider.value;
+
+    textInput.addEventListener('input', () => {
+        charCount.textContent = `${textInput.value.length} chars`;
     });
-    
-    typoSlider.addEventListener('input', () => {
-        typoValue.textContent = typoSlider.value;
+
+    // --- presets ---
+    let presetData = {};
+    fetch('/api/presets').then((r) => r.json()).then((data) => { presetData = data; });
+
+    function markCustomPreset() {
+        presetButtons.forEach((b) => b.classList.toggle('active', b.dataset.preset === ''));
+        activePresetName = '';
+    }
+
+    presetButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const name = btn.dataset.preset;
+            presetButtons.forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            activePresetName = name;
+            if (!name) return;
+            const p = presetData[name];
+            if (!p) return;
+            sliders.wpm.el.value = p.wpm;
+            sliders.randomness.el.value = p.randomness;
+            sliders.typo.el.value = p.typo_probability;
+            sliders.momentum.el.value = p.momentum;
+            Object.values(sliders).forEach((s) => (s.out.textContent = s.fmt(s.el.value)));
+        });
     });
-    
-    // Status checking interval
-    let statusInterval = null;
-    
-    // Start typing functionality
-    startButton.addEventListener('click', function() {
-        const text = textInput.value.trim();
-        
-        if (!text) {
-            showStatus('Error: No text to type!', 'error');
+
+    // --- status helpers ---
+    function setStatus(text, cls) {
+        statusMsg.textContent = text;
+        statusMsg.classList.remove('error', 'info', 'success');
+        if (cls) statusMsg.classList.add(cls);
+        setPill(cls);
+    }
+
+    function setPill(cls) {
+        statusPill.classList.remove('running', 'done', 'error', 'muted');
+        if (cls === 'info') { statusPill.classList.add('running'); statusPill.textContent = 'running'; }
+        else if (cls === 'success') { statusPill.classList.add('done'); statusPill.textContent = 'done'; }
+        else if (cls === 'error') { statusPill.classList.add('error'); statusPill.textContent = 'error'; }
+        else { statusPill.classList.add('muted'); statusPill.textContent = 'idle'; }
+    }
+
+    function setProgress(pct) {
+        progressFill.style.width = `${Math.min(100, Math.max(0, pct * 100))}%`;
+    }
+
+    function setRunning(running) {
+        startBtn.disabled = running;
+        stopBtn.disabled = !running;
+    }
+
+    // --- countdown overlay ---
+    let countdownTimer = null;
+    function showCountdown(seconds) {
+        overlay.classList.remove('hidden');
+        let remaining = seconds;
+        countdownNum.textContent = remaining;
+        clearInterval(countdownTimer);
+        countdownTimer = setInterval(() => {
+            remaining -= 1;
+            if (remaining <= 0) {
+                clearInterval(countdownTimer);
+                overlay.classList.add('hidden');
+            } else {
+                countdownNum.textContent = remaining;
+            }
+        }, 1000);
+    }
+
+    function hideCountdown() {
+        clearInterval(countdownTimer);
+        overlay.classList.add('hidden');
+    }
+
+    cancelCountdown.addEventListener('click', () => {
+        stopTyping();
+        hideCountdown();
+    });
+
+    // --- start / stop ---
+    startBtn.addEventListener('click', () => {
+        const text = textInput.value;
+        if (!text.trim()) {
+            setStatus('Add some text first.', 'error');
             return;
         }
-        
-        const data = {
-            text: text,
-            wpm: parseInt(wpmSlider.value),
-            randomness: parseFloat(randomnessSlider.value),
-            typo_probability: parseFloat(typoSlider.value)
+
+        const countdown = parseInt(sliders.countdown.el.value, 10);
+        const payload = {
+            text,
+            wpm: parseInt(sliders.wpm.el.value, 10),
+            randomness: parseFloat(sliders.randomness.el.value),
+            typo_probability: parseFloat(sliders.typo.el.value),
+            momentum: parseFloat(sliders.momentum.el.value),
+            countdown,
         };
-        
-        // Disable the start button
-        startButton.disabled = true;
-        startButton.classList.add('disabled');
-        
-        // Show the progress bar
-        progressBar.style.display = 'block';
-        
-        // Update status
-        showStatus('Starting in 5 seconds... Focus on your target application!', 'info');
-        
-        // Make API call to start typing
+        if (activePresetName) payload.preset = activePresetName;
+
+        setRunning(true);
+        setProgress(0);
+        setStatus('Starting...', 'info');
+        showCountdown(countdown);
+
         fetch('/api/type', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'error') {
-                showStatus(data.message, 'error');
-                resetUI();
-            } else {
-                // Start polling for status
-                statusInterval = setInterval(checkStatus, 1000);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showStatus('Error: Could not connect to server', 'error');
-            resetUI();
-        });
+            .then((r) => r.json().then((d) => ({ ok: r.ok, body: d })))
+            .then(({ ok, body }) => {
+                if (!ok) {
+                    setStatus(body.message || 'Failed to start', 'error');
+                    setRunning(false);
+                    hideCountdown();
+                    return;
+                }
+                startPolling();
+            })
+            .catch((err) => {
+                console.error(err);
+                setStatus('Could not reach server', 'error');
+                setRunning(false);
+                hideCountdown();
+            });
     });
-    
-    // Check typing status
-    function checkStatus() {
+
+    stopBtn.addEventListener('click', stopTyping);
+
+    function stopTyping() {
+        fetch('/api/stop', { method: 'POST' }).catch(() => {});
+    }
+
+    function startPolling() {
+        clearInterval(pollTimer);
+        pollTimer = setInterval(pollStatus, 250);
+    }
+
+    function pollStatus() {
         fetch('/api/status')
-        .then(response => response.json())
-        .then(data => {
-            if (!data.typing_in_progress) {
-                clearInterval(statusInterval);
-                showStatus('Typing completed!', 'success');
-                resetUI();
-            } else {
-                showStatus('Typing in progress...', 'info');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            clearInterval(statusInterval);
-            showStatus('Error: Lost connection to server', 'error');
-            resetUI();
-        });
+            .then((r) => r.json())
+            .then((s) => {
+                setProgress(s.progress || 0);
+                const stats = s.total
+                    ? `${s.position} / ${s.total} · ${(s.elapsed || 0).toFixed(1)}s`
+                    : '';
+                statusStats.textContent = stats;
+
+                if (s.running) {
+                    // Hide countdown once we're past the "Focus..." message.
+                    if (!s.message.startsWith('Focus')) hideCountdown();
+                    setStatus(s.message || 'Typing...', 'info');
+                } else {
+                    clearInterval(pollTimer);
+                    hideCountdown();
+                    setRunning(false);
+                    const done = (s.message || '').toLowerCase().includes('done');
+                    setStatus(s.message || 'Idle', done ? 'success' : 'info');
+                    if (done) setProgress(1);
+                }
+            })
+            .catch(() => {
+                clearInterval(pollTimer);
+                setRunning(false);
+                hideCountdown();
+                setStatus('Lost connection', 'error');
+            });
     }
-    
-    // Reset UI elements
-    function resetUI() {
-        startButton.disabled = false;
-        startButton.classList.remove('disabled');
-        progressBar.style.display = 'none';
-    }
-    
-    // Display status message
-    function showStatus(message, type) {
-        statusMessage.textContent = message;
-        
-        // Remove all status classes
-        statusMessage.classList.remove('error', 'info', 'success');
-        
-        // Add appropriate class
-        if (type) {
-            statusMessage.classList.add(type);
+
+    // Keyboard: Esc cancels, Ctrl+Enter starts
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !stopBtn.disabled) {
+            stopTyping();
+        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !startBtn.disabled) {
+            startBtn.click();
         }
-    }
-    
-    // Clear functionality
-    clearButton.addEventListener('click', function() {
-        textInput.value = '';
-        showStatus('', '');
-        progressBar.style.display = 'none';
     });
-    
-    // Add CSS classes for status types
-    const style = document.createElement('style');
-    style.textContent = `
-        .status-message.error {
-            color: #f44336;
-        }
-        
-        .status-message.info {
-            color: #2196f3;
-        }
-        
-        .status-message.success {
-            color: #4caf50;
-        }
-        
-        .btn.disabled {
-            background-color: #bdbdbd !important;
-            color: #757575 !important;
-            cursor: not-allowed;
-            box-shadow: none !important;
-        }
-    `;
-    document.head.appendChild(style);
-});
+
+    // Initial status fetch in case a run is in progress (e.g. page reload).
+    pollStatus();
+})();

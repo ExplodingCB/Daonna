@@ -1,2 +1,4 @@
-flask==2.0.1
-pyautogui==0.9.53
+flask>=2.0.1
+pyautogui>=0.9.53
+pywebview>=5.0
+mcp
